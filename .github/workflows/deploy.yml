@@ -61,17 +61,21 @@ jobs:
             # 2. Pull the latest image tag
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/bookstore-app:${{ needs.build-and-push.outputs.image_tag }}
 
-            # 3. Stop and remove existing running container (if present)
+            # 3. Stop and remove existing running container
             docker stop bookstore-app || true
             docker rm bookstore-app || true
 
-            # 4. Run the new container mapping port 8080
-              docker run -d \
+            # 4. Run the new container
+            docker run -d \
             --name bookstore-app \
             --restart always \
-            --env-file .env \
+            --env-file /home/ubuntu/BOOK-STORE/.env \
             -p 8080:8080 \
-            ${{ secrets.DOCKERHUB_USERNAME }}/bookstore-app:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/bookstore-app:${{ needs.build-and-push.outputs.image_tag }}
 
-            # 5. Clean up unused dangling images
+            # 5. Verify container
+            docker ps
+            docker logs --tail 20 bookstore-app
+
+            # 6. Clean up unused dangling images
             docker image prune -f

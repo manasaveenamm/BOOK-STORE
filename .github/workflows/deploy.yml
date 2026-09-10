@@ -66,11 +66,12 @@ jobs:
             docker rm bookstore-app || true
 
             # 4. Run the new container mapping port 8080
-            docker run -d \
-              --name bookstore-app \
-              --restart always \
-              -p 8080:8080 \
-              ${{ secrets.DOCKERHUB_USERNAME }}/bookstore-app:${{ needs.build-and-push.outputs.image_tag }}
+              docker run -d \
+            --name bookstore-app \
+            --restart always \
+            --env-file .env \
+            -p 8080:8080 \
+            ${{ secrets.DOCKERHUB_USERNAME }}/bookstore-app:${{ github.sha }}
 
             # 5. Clean up unused dangling images
             docker image prune -f

@@ -1,0 +1,76 @@
+name: CI/CD Pipeline - Bookstore App
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  # -------------------------------------------------------------
+  # Job 1: Build and Push Docker Image (CI)
+  # -------------------------------------------------------------
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.prep.outputs.tag }}
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set Image Tag
+        id: prep
+        run: echo "tag=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/bookstore-app:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/bookstore-app:${{ steps.prep.outputs.tag }}
+
+  # -------------------------------------------------------------
+  # Job 2: Automate Deployment to EC2 via SSH (CD)
+  # -------------------------------------------------------------
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy Container via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # 1. Log in to Docker Hub on EC2
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+            # 2. Pull the latest image tag
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/bookstore-app:${{ needs.build-and-push.outputs.image_tag }}
+
+            # 3. Stop and remove existing running container (if present)
+            docker stop bookstore-app || true
+            docker rm bookstore-app || true
+
+            # 4. Run the new container mapping port 8080
+            docker run -d \
+              --name bookstore-app \
+              --restart always \
+              -p 8080:8080 \
+              ${{ secrets.DOCKERHUB_USERNAME }}/bookstore-app:${{ needs.build-and-push.outputs.image_tag }}
+
+            # 5. Clean up unused dangling images
+            docker image prune -f
